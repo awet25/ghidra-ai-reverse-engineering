@@ -1,0 +1,35 @@
+# Python virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Testing/cache
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Build files
+dist/
+build/
+*.egg-info/
+
+# Environment/secrets
+.env
+
+# AI model files - do not commit huge models
+*.gguf
+*.safetensors
+
+# Binary samples
+samples/*.exe
+samples/*.dll
+samples/*.bin
+
+# Ghidra project files if they ever appear here
+*.gpr
+*.rep/
