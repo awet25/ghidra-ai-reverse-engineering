@@ -1,21 +1,15 @@
 #include <stdio.h>
 
-int add(int a, int b)
+void show_message()
 {
-    return a + b;
-}
-
-int multiply(int a, int b)
-{
-    return a * b;
+    printf("GHIDRA AI STRING TEST\n");
 }
 
 int main()
 {
-    int x = add(5, 3);
-    int y = multiply(x, 2);
-
-    printf("%d\n", y);
+    printf("Starting analysis...\n");
+    show_message();
+    printf("Analysis complete.\n");
 
     return 0;
 }
