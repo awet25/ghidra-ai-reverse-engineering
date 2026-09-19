@@ -8,7 +8,7 @@ BINARY_PATH= BASE_DIR /"samples"/"harmless.exe"
 pyghidra.start(install_dir=GHIDRA_INSTALL)
 
 from ghidra_ai.context_extractor import ContextExtractor
-
+from ghidra_ai.prompt_builder import PromptBuilder
 
 with pyghidra.open_project(
     PROJECT_FOLDER,
@@ -25,44 +25,21 @@ with pyghidra.open_project(
         print("Analyzing binary......")
         pyghidra.analyze(program, monitor)
         print("Analysis completed")
-
-        # functions = program.getFunctionManager().getFunctions(True)
-
         selected_function = None
-
-        # for function in functions:
-        #     if not function.isExternal():
-        #         selected_function = function
-        #         break
-
-        # if selected_function is None:
-        #     raise RuntimeError("No function found.")
-
         extractor = ContextExtractor(program)
-        selected_function,found_strings=extractor.find_function_with_strings()
+        selected_function,_=extractor.find_function_with_strings()
         if selected_function is None:
             print("No Function with strings found.")
             extractor.close()
             raise SystemExit
         context = extractor.extract(
             selected_function,
-            pyghidra.task_monitor()
+           monitor
         )
-
-        print("Function:", context.name)
-        print("Address:", context.address)
-        print("\nCallers:")
-        for caller in context.callers:
-            print(" ", caller)
-        print("\nCallees:")
-        for callee in context.callees:
-            print(" ",callee)   
-        print("\nstrings:")
-        for string in context.strings:
-            print(" ", repr(string))
-
-        print("\n===== DECOMPILED CODE =====\n")
-
-        print(context.decompiled_code)
+        prompt_builder= PromptBuilder()
+        prompt= prompt_builder.build_prompt(context)
+        
+        print("\n ====== AI PROMPT=========\n")
+        print(prompt)
 
         extractor.close()
