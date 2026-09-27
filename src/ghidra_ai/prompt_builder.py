@@ -31,6 +31,26 @@ REFERENCED STRINGS:
 
 DECOMPILED C CODE:
 {context.decompiled_code}
+
+
+Return ONLY valid JSON using exactly this structure:
+{{
+    "summary":"brief explanation of the function",
+    "suggested_name":"descriptive_function_name",
+    "suspicious_behaviors":[],
+    "evidence":[],
+    "confidence":"low | medium | high",
+    "limitations":[]
+    
+}}
+   Rules:
+
+- Do not return Markdown.
+- Do not return text outside the JSON object.
+- Base conclusions only on the provided evidence.
+- Do not invent APIs, strings, or behaviors.
+- If behavior cannot be determined, state that in limitations.
+- Do not label behavior malicious merely because system APIs are used.
         
         """
         
