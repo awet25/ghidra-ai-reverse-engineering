@@ -11,10 +11,9 @@ class AIService:
                             json={
                                 "model":self.model,
                                 "prompt":prompt,
+                                "format":"json",
                                 "stream":False
                             },timeout=120  )
-        print(response.status_code)
-        print(response.text)
         response.raise_for_status()
         data=response.json()
         return data["response"]
