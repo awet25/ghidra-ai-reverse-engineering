@@ -33,3 +33,6 @@ samples/*.bin
 # Ghidra project files if they ever appear here
 *.gpr
 *.rep/
+__pycache__
+*.pyc
+*.pyo
