@@ -13,10 +13,13 @@ __pycache__/
 .vscode/
 .idea/
 
-# Build files
+# Python/package build files
 dist/
 build/
 *.egg-info/
+
+# Gradle cache/build output
+.gradle/
 
 # Environment/secrets
 .env
@@ -30,9 +33,12 @@ samples/*.exe
 samples/*.dll
 samples/*.bin
 
-# Ghidra project files if they ever appear here
+# Ghidra project files
 *.gpr
 *.rep/
-__pycache__
-*.pyc
-*.pyo
+
+# Temporary extension inspection folder
+tmpcheck/
+# Java compiled files
+*.class
+gradle.properties
