@@ -1,7 +1,7 @@
 from ghidra.app.decompiler import DecompInterface, DecompileOptions
 from ghidra.program.model.data import StringDataInstance
-
 from .models import FunctionContext
+
 
 
 class ContextExtractor:
@@ -34,25 +34,38 @@ class ContextExtractor:
 
         return result.getDecompiledFunction().getC()
 
+
     def get_called_functions(self, function, monitor):
+        """Return distinct call targets, resolving Ghidra-recognized thunks."""
+        return list(self._get_called_function_map(function, monitor).values())
+
+    def _get_called_function_map(self, function, monitor):
         called_functions = function.getCalledFunctions(
             monitor
         )
-
-        return [
-            str(func.getName())
-            for func in called_functions
-        ]
+        callees = {}
+        for callee in called_functions:
+            target = callee.getThunkedFunction(True) if callee.isThunk() else None
+            if target is None:
+                target = callee
+            callees[str(target.getEntryPoint())] = str(target.getName())
+        return callees
 
     def get_calling_functions(self, function, monitor):
-        calling_functions = function.getCallingFunctions(
-            monitor
-        )
-
-        return [
-            str(func.getName())
-            for func in calling_functions
-        ]
+        """Include callers of recognized thunks that lead to this function."""
+        calling_functions = list(function.getCallingFunctions(monitor))
+        thunk_addresses = function.getFunctionThunkAddresses(True)
+        if thunk_addresses is not None:
+            manager = self.program.getFunctionManager()
+            for address in thunk_addresses:
+                thunk = manager.getFunctionAt(address)
+                if thunk is not None:
+                    calling_functions.extend(thunk.getCallingFunctions(monitor))
+        callers = {
+            str(caller.getEntryPoint()): str(caller.getName())
+            for caller in calling_functions
+        }
+        return list(callers.values())
 
     def get_strings(self, function):
         listing = self.program.getListing()
@@ -143,8 +156,8 @@ class ContextExtractor:
                 return function, strings
 
         return None, []
-    
-    
+
+
 
     def extract(self, function, monitor):
         code = self.get_decompiled_code(
