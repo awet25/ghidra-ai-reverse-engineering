@@ -16,7 +16,6 @@ pyghidra.start(
 )
 
 
-from ghidra_ai.context_extractor import ContextExtractor
 from ghidra_ai.function_analyzer import FunctionAnalyzer
 
 
@@ -45,25 +44,21 @@ with pyghidra.open_project(
         pyghidra.analyze(program, monitor)
         print("Analysis completed.")
 
-        # Temporary function selection
-        extractor = ContextExtractor(program)
+        analyzer = FunctionAnalyzer(program)
 
         selected_function, _ = (
-            extractor.find_function_with_strings()
+            analyzer.extractor.find_function_with_strings()
         )
 
         if selected_function is None:
             print("No function with strings found.")
-            extractor.close()
+            analyzer.close()
             raise SystemExit
 
         print(
             "Selected function:",
             selected_function.getName()
         )
-
-        # Full AI analysis pipeline
-        analyzer = FunctionAnalyzer(program)
 
         analysis = analyzer.analyze(
             selected_function,
@@ -94,4 +89,3 @@ with pyghidra.open_project(
             print("-", limitation)
 
         analyzer.close()
-        extractor.close()

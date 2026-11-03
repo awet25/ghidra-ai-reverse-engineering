@@ -7,10 +7,9 @@ class FunctionContext:
     address: str
     decompiled_code: str
     strings: list[str] = field(default_factory=list)
-    imports: list[str] = field(default_factory=list)
     callers: list[str] = field(default_factory=list)
     callees: list[str] = field(default_factory=list)
-    
+
 @dataclass
 class AnalysisResult:
     summary: str
@@ -19,4 +18,3 @@ class AnalysisResult:
     evidence:list[str]=field(default_factory=list)
     confidence:str="unknown"
     limitations:list[str]=field(default_factory=list)
-    
