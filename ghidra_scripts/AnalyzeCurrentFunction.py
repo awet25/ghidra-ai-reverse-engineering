@@ -6,6 +6,29 @@
 from ghidra_ai.function_analyzer import FunctionAnalyzer
 
 
+def parse_supporting_functions(arguments, program, diagnostic=print):
+    """Resolve explicit entry addresses only; backend validation remains authoritative."""
+    selections = []
+    manager = program.getFunctionManager()
+    for argument in arguments:
+        text = str(argument)
+        key, separator, value = text.partition("=")
+        if key != "support" or not separator or not value.strip():
+            diagnostic(f"Ignored script argument {text!r}: expected support=<entry address>.")
+            continue
+        try:
+            address = program.getAddressFactory().getAddress(value.strip())
+            if address is None:
+                raise ValueError("invalid address")
+            function = manager.getFunctionAt(address)
+            if function is None:
+                raise ValueError("no function at exact entry address")
+            selections.append(function)
+        except Exception as error:
+            diagnostic(f"Ignored support argument {text!r}: {error}.")
+    return selections
+
+
 def main():
 
     if currentProgram is None:
@@ -29,6 +52,8 @@ def main():
         )
         return
 
+    supporting_functions = parse_supporting_functions(getScriptArgs(), currentProgram)
+
     print("\n==============================")
     print("AI FUNCTION ANALYSIS")
     print("==============================")
@@ -39,18 +64,18 @@ def main():
     print("\nAddress:")
     print(function.getEntryPoint())
 
-    analyzer = FunctionAnalyzer(
-        currentProgram
-    )
+    analyzer = FunctionAnalyzer(currentProgram)
 
     try:
 
         print("\nSending function to Qwen...")
 
-        analysis = analyzer.analyze(
-            function,
-            monitor
-        )
+        if supporting_functions:
+            analysis = analyzer.analyze(
+                function, monitor, supporting_functions=supporting_functions
+            )
+        else:
+            analysis = analyzer.analyze(function, monitor)
 
         print("\n===== ANALYSIS RESULT =====\n")
 
@@ -78,9 +103,18 @@ def main():
         print(analysis.confidence)
 
         print("\nLimitations:")
-        if analysis.limitations:
+        validation = analyzer.last_evidence_validation
+        diagnostics = [] if validation is None else validation.errors + validation.confidence_diagnostics
+        verification = analyzer.last_verification
+        verification_unavailable = verification is not None and verification.status != "completed"
+        if analysis.limitations or diagnostics or verification_unavailable:
             for limitation in analysis.limitations:
                 print("-", limitation)
+            # Display system diagnostics separately; never rewrite the model's AnalysisResult.
+            for diagnostic in diagnostics:
+                print("- Provenance validation (syntax only):", diagnostic)
+            if verification_unavailable:
+                print("- Semantic verification unavailable; showing unverified draft:", verification.failure)
         else:
             print("None")
 

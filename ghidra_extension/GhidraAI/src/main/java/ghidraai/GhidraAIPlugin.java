@@ -1,6 +1,5 @@
 package ghidraai;
 
-import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
@@ -15,6 +14,7 @@ import ghidra.app.script.GhidraScriptProvider;
 import ghidra.app.script.GhidraScriptUtil;
 import ghidra.app.script.GhidraState;
 import ghidra.app.script.ScriptControls;
+import ghidra.framework.Application;
 import ghidra.framework.plugintool.PluginInfo;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.framework.plugintool.util.PluginStatus;
@@ -24,6 +24,7 @@ import ghidra.program.util.ProgramLocation;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskBuilder;
 import ghidra.util.task.TaskMonitor;
+import ghidra.util.Msg;
 @PluginInfo(
     status = PluginStatus.RELEASED,
     packageName = CorePluginPackage.NAME,
@@ -78,32 +79,31 @@ public class GhidraAIPlugin extends ProgramPlugin {
         }
         Function function = provider.getSelectedFunction();
         if (function == null) {
-            provider.showOutput("Select a function from the list before analyzing.");
+            provider.showError("Select a root function before analyzing.");
             return;
         }
         Program program = currentProgram;
         if (program == null || function.getProgram() != program || function.isDeleted()) {
-            provider.showOutput("The selected function is no longer available in the current program.");
+            provider.showError("The selected function is no longer available in the current program.");
             return;
         }
 
         GhidraState state = new GhidraState(tool, tool.getProject(), program,
             new ProgramLocation(program, function.getEntryPoint()), null, null);
-        String functionName = function.getName();
+        String[] scriptArguments = provider.getSupportingScriptArguments();
         Object consumer = new Object();
         if (!program.addConsumer(consumer)) {
-            provider.showOutput("The program was closed. Open a program and select a function.");
+            provider.showError("The program was closed. Open a program and select a function.");
             return;
         }
 
         analysisRunning = true;
         provider.setAnalysisRunning(true);
-        provider.showOutput("Analyzing: " + functionName + "...");
         try {
             new TaskBuilder("Analyze Function", monitor -> {
                 String output = "Analysis stopped before output could be captured.";
                 try {
-                    output = runAnalysisScript(state, monitor);
+                    output = runAnalysisScript(state, monitor, scriptArguments);
                 }
                 finally {
                     try {
@@ -120,41 +120,64 @@ public class GhidraAIPlugin extends ProgramPlugin {
                 .launchNonModal();
         }
         catch (RuntimeException error) {
-            program.release(consumer);
-            finishAnalysis("Could not start analysis: " + error);
+            Msg.error(this, "Could not start Ghidra AI analysis", error);
+            try {
+                program.release(consumer);
+            }
+            finally {
+                finishAnalysis("Could not start analysis: See the Ghidra console for details.");
+            }
         }
     }
 
-    private String runAnalysisScript(GhidraState state, TaskMonitor monitor) {
+    static String runAnalysisScript(GhidraState state, TaskMonitor monitor, String[] scriptArguments) {
         StringWriter output = new StringWriter();
         try (PrintWriter writer = new PrintWriter(output, true)) {
             try {
                 writer.println("Program: " + state.getCurrentProgram().getName());
                 writer.println("Selected address: " + state.getCurrentAddress());
                 monitor.checkCancelled();
-                ResourceFile source = GhidraScriptUtil.findScriptByName("AnalyzeCurrentFunction.py");
+                ResourceFile source = findAnalysisScript(Application.getModuleRootDir("GhidraAI"));
                 if (source == null) {
-                    throw new IOException("AnalyzeCurrentFunction.py was not found. Add this project's " +
-                        "ghidra_scripts directory to Script Manager's script directories.");
+                    Msg.error(GhidraAIPlugin.class,
+                        "The installed GhidraAI extension is missing ghidra_scripts/AnalyzeCurrentFunction.py. " +
+                        "Reinstall the matching extension; other Script Manager copies are not used.");
+                    writer.println("\nAI analysis failed: The installed GhidraAI extension is incomplete. " +
+                        "Reinstall the extension.");
+                    return output.toString();
                 }
                 GhidraScriptProvider scriptProvider = GhidraScriptUtil.getProvider(source);
                 if (scriptProvider == null ||
                         !"PyGhidra".equalsIgnoreCase(scriptProvider.getRuntimeEnvironmentName())) {
-                    throw new IOException("No PyGhidra provider is available for AnalyzeCurrentFunction.py. " +
-                        "Start Ghidra with PyGhidra and keep the script's #@runtime PyGhidra marker.");
+                    writer.println("\nAI analysis failed: No PyGhidra provider is available. " +
+                        "Start Ghidra with PyGhidra to run this script.");
+                    return output.toString();
                 }
-                GhidraScript script = scriptProvider.getScriptInstance(source, writer);
+                final GhidraScript script = scriptProvider.getScriptInstance(source, writer);
+                // Build the execution array from the EDT selection snapshot, then set and
+                // execute this one script instance. Never reread the UI in the task.
+                String[] executionArguments = scriptArguments.clone();
+                script.setScriptArgs(executionArguments);
                 script.execute(state, new ScriptControls(writer, writer, monitor));
             }
             catch (CancelledException error) {
                 writer.println("\nAnalysis cancelled.");
             }
             catch (Exception error) {
-                writer.println("\nAI analysis failed: " + error);
-                error.printStackTrace(writer);
+                Msg.error(GhidraAIPlugin.class, "Ghidra AI analysis failed", error);
+                writer.println("\nAI analysis failed: See the Ghidra console for details.");
             }
         }
         return output.toString();
+    }
+
+    static ResourceFile findAnalysisScript(ResourceFile moduleRoot) {
+        // A global filename lookup can select an older script from another checkout.
+        if (moduleRoot == null) {
+            return null;
+        }
+        ResourceFile script = new ResourceFile(moduleRoot, "ghidra_scripts/AnalyzeCurrentFunction.py");
+        return script.isFile() ? script : null;
     }
 
     private void finishAnalysis(String output) {

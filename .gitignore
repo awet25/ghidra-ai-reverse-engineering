@@ -6,15 +6,13 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Testing/cache
-.pytest_cache/
-
 # IDE
 .vscode/
 .idea/
 
 # Python/package build files
 dist/
+.dist/
 build/
 *.egg-info/
 
@@ -28,17 +26,17 @@ build/
 *.gguf
 *.safetensors
 
-# Binary samples
-samples/*.exe
-samples/*.dll
-samples/*.bin
-
 # Ghidra project files
 *.gpr
 *.rep/
 
-# Temporary extension inspection folder
-tmpcheck/
+# Local scratch directories and logs
+tmp*/
+*.log
+
+# IDE Java output
+/ghidra_extension/GhidraAI/bin/
+
 # Java compiled files
 *.class
 gradle.properties
