@@ -16,3 +16,11 @@ if (ghidraInstallDir){
 else {
     throw new GradleException("GHIDRA_INSTALL_DIR is not defined")
 }
+
+tasks.named('buildExtension') {
+    exclude '**/tmp*/**', '**/.dist/**'
+    // Keep the Java runner and its Python entry point in the same deployed version.
+    from('../../ghidra_scripts/AnalyzeCurrentFunction.py') {
+        into "${project.name}/ghidra_scripts"
+    }
+}
