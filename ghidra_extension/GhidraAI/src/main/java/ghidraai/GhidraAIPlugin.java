@@ -7,8 +7,10 @@ import javax.swing.SwingUtilities;
 
 import generic.jar.ResourceFile;
 import ghidra.app.CorePluginPackage;
+import ghidra.app.events.ProgramActivatedPluginEvent;
 import ghidra.app.plugin.PluginCategoryNames;
 import ghidra.app.plugin.ProgramPlugin;
+import ghidra.app.services.ProgramManager;
 import ghidra.app.script.GhidraScript;
 import ghidra.app.script.GhidraScriptProvider;
 import ghidra.app.script.GhidraScriptUtil;
@@ -30,7 +32,8 @@ import ghidra.util.Msg;
     packageName = CorePluginPackage.NAME,
     category = PluginCategoryNames.CODE_VIEWER,
     shortDescription = "AI Reverse Engineering Assistant",
-    description = "AI-assisted function analysis inside Ghidra."
+    description = "AI-assisted function analysis inside Ghidra.",
+    servicesRequired = { ProgramManager.class }
 )
 public class GhidraAIPlugin extends ProgramPlugin {
 
@@ -44,6 +47,28 @@ public class GhidraAIPlugin extends ProgramPlugin {
             tool,
             this
         );
+    }
+
+    @Override
+    protected void init() {
+        super.init();
+        refreshCurrentProgram();
+    }
+
+    void refreshCurrentProgram() {
+        // The provider can be shown inside its constructor, before this field is assigned.
+        if (provider == null) {
+            return;
+        }
+        ProgramManager manager = tool.getService(ProgramManager.class);
+        Program activeProgram = manager == null ? currentProgram : manager.getCurrentProgram();
+        if (activeProgram != currentProgram) {
+            // Keep ProgramPlugin's state in sync too; Analyze uses currentProgram.
+            processEvent(new ProgramActivatedPluginEvent(getName(), activeProgram));
+        }
+        else {
+            provider.setProgram(activeProgram);
+        }
     }
 
     @Override

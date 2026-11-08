@@ -24,3 +24,23 @@ tasks.named('buildExtension') {
         into "${project.name}/ghidra_scripts"
     }
 }
+
+sourceSets {
+    regression {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.runtimeClasspath
+    }
+}
+
+tasks.register('functionListRegression', JavaExec) {
+    group = 'verification'
+    description = 'Checks delayed function discovery and UI listener lifecycle without a GUI.'
+    dependsOn regressionClasses
+    classpath = sourceSets.regression.runtimeClasspath
+    mainClass = 'ghidraai.FunctionListRefreshRegression'
+    systemProperty 'java.awt.headless', 'true'
+}
+
+tasks.named('check') {
+    dependsOn 'functionListRegression'
+}
