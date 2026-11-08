@@ -22,13 +22,19 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
+import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.ToolTipManager;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
+import ghidra.framework.model.DomainObjectChangedEvent;
+import ghidra.framework.model.DomainObjectEvent;
+import ghidra.framework.model.DomainObjectListener;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionIterator;
 import ghidra.program.model.listing.Program;
+import ghidra.program.util.ProgramEvent;
 
 /** Swing presentation only; analysis remains owned by the plugin and Python backend. */
 final class GhidraAIPanel extends JPanel {
@@ -36,6 +42,7 @@ final class GhidraAIPanel extends JPanel {
     private final DefaultListModel<Function> functionListModel = new DefaultListModel<>();
     private final JList<Function> functionList = new JList<>(functionListModel);
     private final JTextField filterField = new JTextField();
+    private final JButton refreshButton = new JButton("Refresh");
     private final JCheckBox followLocation = new JCheckBox("Follow CodeBrowser location");
     private final JLabel functionLabel = new JLabel("None");
     private final JLabel addressLabel = new JLabel(" ");
@@ -43,6 +50,9 @@ final class GhidraAIPanel extends JPanel {
     private final JButton analyzeButton = new JButton("Analyze Function");
     private final JEditorPane outputArea = new JEditorPane("text/html", "");
     private final SupportingFunctionsPanel supportingFunctions = new SupportingFunctionsPanel();
+    private final DomainObjectListener programListener = this::programChanged;
+    private final Timer functionRefreshTimer = new Timer(500, event -> refreshFunctions());
+    private Program program;
     private Function selectedFunction;
     private boolean updatingFunctionList;
     private boolean running;
@@ -53,6 +63,7 @@ final class GhidraAIPanel extends JPanel {
         setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         setPreferredSize(new Dimension(620, 800));
         setMinimumSize(new Dimension(320, 480));
+        functionRefreshTimer.setRepeats(false);
 
         filterField.setName("functionFilter");
         filterField.setToolTipText("Filter functions by name");
@@ -63,6 +74,11 @@ final class GhidraAIPanel extends JPanel {
         });
         JPanel search = section("Function search/filter");
         search.add(filterField, BorderLayout.CENTER);
+        refreshButton.setName("refreshFunctionsButton");
+        refreshButton.setToolTipText("Reload functions from the current program");
+        refreshButton.setEnabled(false);
+        refreshButton.addActionListener(event -> refreshFunctions());
+        search.add(refreshButton, BorderLayout.EAST);
 
         functionList.setName("rootFunctionList");
         functionList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
@@ -162,21 +178,69 @@ final class GhidraAIPanel extends JPanel {
     }
 
     void setProgram(Program program) {
+        if (this.program == program) {
+            // Reopening the panel or replaying activation must preserve the analyst's choices.
+            refreshFunctions();
+            return;
+        }
+        detachProgramListener();
+        this.program = program;
+        // Listen before taking the snapshot so functions added during loading aren't missed.
+        if (program != null) {
+            program.addListener(programListener);
+        }
+        refreshButton.setEnabled(program != null);
         supportingFunctions.clear();
         functions.clear();
         functionListModel.clear();
         setSelectedFunction(null);
         filterField.setText("");
+        refreshFunctions();
+    }
+
+    void refreshFunctions() {
+        functionRefreshTimer.stop();
+        List<Function> refreshed = new ArrayList<>();
         if (program != null) {
             FunctionIterator iterator = program.getFunctionManager().getFunctions(true);
             while (iterator.hasNext()) {
                 Function function = iterator.next();
-                if (!function.isExternal()) {
-                    functions.add(function);
+                if (!function.isDeleted() && !function.isExternal()) {
+                    refreshed.add(function);
                 }
             }
         }
+        functions.clear();
+        functions.addAll(refreshed);
         filterFunctions();
+    }
+
+    private void programChanged(DomainObjectChangedEvent event) {
+        if (!event.contains(DomainObjectEvent.RESTORED, ProgramEvent.FUNCTION_ADDED,
+                ProgramEvent.FUNCTION_REMOVED, ProgramEvent.FUNCTION_CHANGED,
+                ProgramEvent.SYMBOL_RENAMED)) {
+            return;
+        }
+        // DomainObjectChangedEvent is transient; retain only its source for the EDT callback.
+        Object source = event.getSource();
+        SwingUtilities.invokeLater(() -> {
+            if (program == source && !functionRefreshTimer.isRunning()) {
+                // Start once per batch rather than postponing forever during continuous analysis.
+                functionRefreshTimer.start();
+            }
+        });
+    }
+
+    private void detachProgramListener() {
+        functionRefreshTimer.stop();
+        if (program != null) {
+            program.removeListener(programListener);
+        }
+    }
+
+    void dispose() {
+        detachProgramListener();
+        program = null;
     }
 
     private void filterFunctions() {
@@ -184,12 +248,15 @@ final class GhidraAIPanel extends JPanel {
         String query = filterField.getText().toLowerCase(Locale.ROOT);
         updatingFunctionList = true;
         try {
-            functionListModel.clear();
+            List<Function> matches = new ArrayList<>();
             for (Function function : functions) {
-                if (function.getName().toLowerCase(Locale.ROOT).contains(query)) {
-                    functionListModel.addElement(function);
+                if (!function.isDeleted() &&
+                        function.getName().toLowerCase(Locale.ROOT).contains(query)) {
+                    matches.add(function);
                 }
             }
+            functionListModel.clear();
+            functionListModel.addAll(matches);
             if (previous != null && functionListModel.contains(previous)) {
                 functionList.setSelectedValue(previous, true);
             }

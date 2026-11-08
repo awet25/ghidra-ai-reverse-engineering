@@ -26,6 +26,9 @@ architecture, API families, particular names, or fixed addresses.
 The Gradle wrapper is included. Windows has been exercised with the desktop
 plugin; equivalent Linux/ARM analysis has not yet been validated end to end.
 
+The extension's `gradlew.bat check` (or `./gradlew check`) runs headless function-list
+regression checks, including delayed discovery, refresh, filtering and listener cleanup.
+
 ## Install and build
 
 From the repository root, create an environment and install the Python backend:
@@ -97,6 +100,11 @@ token counting; adjust it together with the context/output settings.
 1. Open a binary and allow Ghidra analysis to complete.
 2. Search/filter the root function list and select one root, or enable
    **Follow CodeBrowser location**.
+   Opening the AI panel also loads the currently active binary, including when
+   the binary was opened before the panel was enabled.
+   The list refreshes automatically as Ghidra adds, removes, or renames functions.
+   Use **Refresh** to reload it manually; your filter and available root selection
+   are preserved.
 3. Optionally check up to five entries in **Supporting Functions**. Nothing is
    preselected; changing the root or program clears previous choices.
 4. Click **Analyze Function**. The button is disabled while analysis runs.
