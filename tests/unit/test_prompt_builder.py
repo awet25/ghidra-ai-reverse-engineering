@@ -36,3 +36,6 @@ def test_prompt_assigns_stable_source_ids_to_sorted_supports():
     assert "later implementation" in result.source_catalog["S2"]
     assert "Resolved support: S1." in result.source_catalog["RC1"]
     assert "Resolved support: S2." in result.source_catalog["RC2"]
+    assert "Return only a Markdown report" in result.prompt
+    assert "Do not return JSON" in result.prompt
+    assert "Do not recall or invent external CVEs" in result.prompt

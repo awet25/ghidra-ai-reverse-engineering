@@ -138,12 +138,16 @@ class EvidenceValidationResult:
 
 @dataclass
 class AnalysisResult:
-    summary: str
-    suggested_name: str
-    suspicious_behaviors:list[str]=field(default_factory=list)
-    evidence:list[str]=field(default_factory=list)
-    confidence:str="unknown"
-    limitations:list[str]=field(default_factory=list)
+    summary: str = ""
+    suggested_name: str = ""
+    suspicious_behaviors: list[str] = field(default_factory=list)
+    evidence: list[str] = field(default_factory=list)
+    confidence: str = "unknown"
+    limitations: list[str] = field(default_factory=list)
+    vulnerability_classification: str = ""
+    vulnerable_code_isolation: str = ""
+    root_cause_impact_analysis: str = ""
+    remediation_patch_verification: str = ""
 
 
 @dataclass
@@ -151,10 +155,8 @@ class AnalysisVerificationResult:
     """Second-pass diagnostics; completion means model review, not proven truth."""
 
     draft: AnalysisResult
-    draft_provenance: EvidenceValidationResult
     status: str = "unavailable"
     verified_result: AnalysisResult | None = None
-    verified_provenance: EvidenceValidationResult | None = None
     failure: str | None = None
     latency_seconds: float = 0.0
     raw_response: str | None = None
