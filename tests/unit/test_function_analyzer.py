@@ -29,15 +29,23 @@ def _load_analyzer_without_ghidra():
 FunctionAnalyzer = _load_analyzer_without_ghidra()
 
 
-def _analysis_response(summary="Processes the root input."):
-    return json.dumps({
-        "summary": summary,
-        "suggested_name": "process_root_input",
-        "suspicious_behaviors": [],
-        "evidence": ["[R0] The root implementation processes an input."],
-        "confidence": "medium",
-        "limitations": [],
-    })
+def _analysis_response(
+    classification="No vulnerability identified.",
+    code="No vulnerable code identified.",
+    cause="The available root implementation does not show a vulnerability.",
+    remediation="No patch is indicated by the available context.",
+):
+    return f"""### 1. Vulnerability Classification
+{classification}
+
+### 2. Vulnerable Code Isolation
+{code}
+
+### 3. Root Cause & Impact Analysis
+{cause}
+
+### 4. Remediation & Patch Verification
+{remediation}"""
 
 
 def _analyzer_for_context(context, *, max_prompt_chars=30000):
@@ -65,35 +73,17 @@ class FakeExtractor:
 class FakeAIService:
     def __init__(self, responses=None):
         self.prompts = []
-<<<<<<< HEAD
-        self.responses = list(responses if responses is not None else [_analysis_response()])
-=======
         self.system_prompts = []
-        self.responses = list(responses or [])
->>>>>>> new-prompt-test
+        self.responses = list(
+            responses if responses is not None else [_analysis_response()]
+        )
 
     def analyze(self, prompt, *, system_prompt=None):
         self.prompts.append(prompt)
-<<<<<<< HEAD
+        self.system_prompts.append(system_prompt)
         if not self.responses:
             raise AssertionError("Unexpected additional model request.")
         return self.responses.pop(0)
-=======
-        self.system_prompts.append(system_prompt)
-        if self.responses:
-            return self.responses.pop(0)
-        return """### 1. Vulnerability Classification
-No vulnerability identified.
-
-### 2. Vulnerable Code Isolation
-No vulnerable code identified.
-
-### 3. Root Cause & Impact Analysis
-The available root implementation does not show a vulnerability.
-
-### 4. Remediation & Patch Verification
-No patch is indicated by the available context."""
->>>>>>> new-prompt-test
 
 
 def test_analyze_makes_one_model_request_and_returns_parsed_result():
@@ -168,13 +158,13 @@ def test_analyze_verifies_the_draft_when_requested():
     )
     analyzer = _analyzer_for_context(context)
     analyzer.ai_service = FakeAIService([
-        _analysis_response("Draft summary."),
-        _analysis_response("Verified summary."),
+        _analysis_response(classification="Draft classification."),
+        _analysis_response(classification="Verified classification."),
     ])
 
     result = analyzer.analyze(function=object(), monitor=None, verify=True)
 
-    assert result.summary == "Verified summary."
+    assert result.vulnerability_classification == "Verified classification."
     assert analyzer.last_verification.status == "completed"
     assert len(analyzer.ai_service.prompts) == 2
     assert "SOURCE CATALOG" in analyzer.ai_service.prompts[1]
@@ -188,38 +178,43 @@ def test_analyze_returns_draft_when_verification_fails():
     )
     analyzer = _analyzer_for_context(context)
     analyzer.ai_service = FakeAIService([
-        _analysis_response("Draft summary."),
-        "not JSON",
+        _analysis_response(classification="Draft classification."),
+        "not a report",
     ])
 
     result = analyzer.analyze(function=object(), monitor=None, verify=True)
 
-    assert result.summary == "Draft summary."
+    assert result.vulnerability_classification == "Draft classification."
     assert analyzer.last_verification.status == "unavailable"
     assert analyzer.last_verification.failure.startswith("ValueError:")
-    assert analyzer.last_evidence_validation.valid
 
 
-def test_analyze_returns_draft_when_verification_has_invalid_source_ids():
+def test_analyze_returns_draft_when_verification_report_is_incomplete():
     context = FunctionContext(
         name="FUN_root",
         address="1000",
         decompiled_code="root implementation",
     )
-    invalid_verification = json.loads(_analysis_response("Unsupported verified summary."))
-    invalid_verification["evidence"] = ["[R9] This source was not supplied."]
+    incomplete_report = """### 1. Vulnerability Classification
+Alternative classification.
+
+### 2. Vulnerable Code Isolation
+Potentially relevant code.
+
+### 3. Root Cause & Impact Analysis
+The remediation section is missing."""
     analyzer = _analyzer_for_context(context)
     analyzer.ai_service = FakeAIService([
-        _analysis_response("Draft summary."),
-        json.dumps(invalid_verification),
+        _analysis_response(classification="Draft classification."),
+        incomplete_report,
     ])
 
     result = analyzer.analyze(function=object(), monitor=None, verify=True)
 
-    assert result.summary == "Draft summary."
-    assert analyzer.last_verification.status == "invalid_provenance"
+    assert result.vulnerability_classification == "Draft classification."
+    assert analyzer.last_verification.status == "unavailable"
     assert analyzer.last_verification.failure is not None
-    assert analyzer.last_evidence_validation.valid
+    assert "Remediation & Patch Verification" in analyzer.last_verification.failure
 
 
 def test_analyze_clears_stale_diagnostics_and_does_not_call_model_on_extraction_error():

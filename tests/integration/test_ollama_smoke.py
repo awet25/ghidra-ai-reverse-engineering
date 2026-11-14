@@ -37,12 +37,12 @@ def test_local_ollama_returns_parseable_analysis():
     response_text = AIService(
         model=model,
         base_url=base_url,
-        num_ctx=4096,
-        num_predict=512,
         timeout=240,
     ).analyze(prompt)
 
     result = ResponseParser().parse(response_text)
 
-    assert result.summary.strip()
-    assert result.suggested_name.strip()
+    assert result.vulnerability_classification.strip()
+    assert result.vulnerable_code_isolation.strip()
+    assert result.root_cause_impact_analysis.strip()
+    assert result.remediation_patch_verification.strip()

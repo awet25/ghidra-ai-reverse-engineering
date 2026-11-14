@@ -17,7 +17,17 @@ class FakeResponse:
 
 def test_analyze_sends_ollama_payload_and_records_diagnostics(monkeypatch):
     calls = []
-    model_response = "### 1. Vulnerability Classification\nNo vulnerability identified."
+    model_response = """### 1. Vulnerability Classification
+No vulnerability identified.
+
+### 2. Vulnerable Code Isolation
+No vulnerable code identified.
+
+### 3. Root Cause & Impact Analysis
+The supplied function does not establish a vulnerability.
+
+### 4. Remediation & Patch Verification
+No remediation is indicated by the supplied context."""
     monkeypatch.setattr(
         "ghidra_ai.ai_service.requests.post",
         lambda url, *, json, timeout: (
