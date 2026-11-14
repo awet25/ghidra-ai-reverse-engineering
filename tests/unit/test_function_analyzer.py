@@ -29,6 +29,17 @@ def _load_analyzer_without_ghidra():
 FunctionAnalyzer = _load_analyzer_without_ghidra()
 
 
+def _analysis_response(summary="Processes the root input."):
+    return json.dumps({
+        "summary": summary,
+        "suggested_name": "process_root_input",
+        "suspicious_behaviors": [],
+        "evidence": ["[R0] The root implementation processes an input."],
+        "confidence": "medium",
+        "limitations": [],
+    })
+
+
 def _analyzer_for_context(context, *, max_prompt_chars=30000):
     analyzer = FunctionAnalyzer.__new__(FunctionAnalyzer)
     analyzer.extractor = FakeExtractor(context)
@@ -52,17 +63,15 @@ class FakeExtractor:
 
 
 class FakeAIService:
-    def __init__(self):
+    def __init__(self, responses=None):
         self.prompts = []
+        self.responses = list(responses if responses is not None else [_analysis_response()])
 
     def analyze(self, prompt):
         self.prompts.append(prompt)
-        return json.dumps({
-            "summary": "Processes the root input.",
-            "suggested_name": "process_root_input",
-            "evidence": ["[R0] The root implementation processes an input."],
-            "confidence": "medium",
-        })
+        if not self.responses:
+            raise AssertionError("Unexpected additional model request.")
+        return self.responses.pop(0)
 
 
 def test_analyze_makes_one_model_request_and_returns_parsed_result():
@@ -79,6 +88,108 @@ def test_analyze_makes_one_model_request_and_returns_parsed_result():
     assert len(analyzer.ai_service.prompts) == 1
     assert analyzer.last_source_catalog["R0"]
     assert analyzer.last_evidence_validation.valid
+
+
+def test_analyze_verifies_the_draft_when_requested():
+    context = FunctionContext(
+        name="FUN_root",
+        address="1000",
+        decompiled_code="root implementation",
+    )
+    analyzer = _analyzer_for_context(context)
+    analyzer.ai_service = FakeAIService([
+        _analysis_response("Draft summary."),
+        _analysis_response("Verified summary."),
+    ])
+
+    result = analyzer.analyze(function=object(), monitor=None, verify=True)
+
+    assert result.summary == "Verified summary."
+    assert analyzer.last_verification.status == "completed"
+    assert len(analyzer.ai_service.prompts) == 2
+    assert "SOURCE CATALOG" in analyzer.ai_service.prompts[1]
+
+
+def test_analyze_returns_draft_when_verification_fails():
+    context = FunctionContext(
+        name="FUN_root",
+        address="1000",
+        decompiled_code="root implementation",
+    )
+    analyzer = _analyzer_for_context(context)
+    analyzer.ai_service = FakeAIService([
+        _analysis_response("Draft summary."),
+        "not JSON",
+    ])
+
+    result = analyzer.analyze(function=object(), monitor=None, verify=True)
+
+    assert result.summary == "Draft summary."
+    assert analyzer.last_verification.status == "unavailable"
+    assert analyzer.last_verification.failure.startswith("ValueError:")
+    assert analyzer.last_evidence_validation.valid
+
+
+def test_analyze_returns_draft_when_verification_has_invalid_source_ids():
+    context = FunctionContext(
+        name="FUN_root",
+        address="1000",
+        decompiled_code="root implementation",
+    )
+    invalid_verification = json.loads(_analysis_response("Unsupported verified summary."))
+    invalid_verification["evidence"] = ["[R9] This source was not supplied."]
+    analyzer = _analyzer_for_context(context)
+    analyzer.ai_service = FakeAIService([
+        _analysis_response("Draft summary."),
+        json.dumps(invalid_verification),
+    ])
+
+    result = analyzer.analyze(function=object(), monitor=None, verify=True)
+
+    assert result.summary == "Draft summary."
+    assert analyzer.last_verification.status == "invalid_provenance"
+    assert analyzer.last_verification.failure is not None
+    assert analyzer.last_evidence_validation.valid
+
+
+def test_analyze_clears_stale_diagnostics_and_does_not_call_model_on_extraction_error():
+    context = FunctionContext(
+        name="FUN_root",
+        address="1000",
+        decompiled_code="root implementation",
+    )
+    analyzer = _analyzer_for_context(context)
+    analyzer.last_source_catalog = {"STALE": "old source"}
+    analyzer.last_evidence_validation = object()
+    analyzer.last_verification = object()
+    analyzer.last_prompt_budget_diagnostics = ["old warning"]
+
+    def fail_extraction(*args, **kwargs):
+        raise RuntimeError("decompilation failed")
+
+    analyzer.extractor.extract = fail_extraction
+    with pytest.raises(RuntimeError, match="decompilation failed"):
+        analyzer.analyze(function=object(), monitor=None)
+
+    assert analyzer.last_source_catalog == {}
+    assert analyzer.last_evidence_validation is None
+    assert analyzer.last_verification is None
+    assert analyzer.last_prompt_budget_diagnostics == []
+    assert analyzer.ai_service.prompts == []
+
+
+def test_analyze_stops_before_model_call_when_protected_context_exceeds_budget():
+    context = FunctionContext(
+        name="FUN_root",
+        address="1000",
+        decompiled_code="root implementation",
+    )
+    analyzer = _analyzer_for_context(context, max_prompt_chars=100)
+
+    with pytest.raises(ValueError, match="Root context was preserved"):
+        analyzer.analyze(function=object(), monitor=None)
+
+    assert analyzer.ai_service.prompts == []
 
 
 def test_prompt_budget_truncates_support_code_but_preserves_root_and_source():
@@ -113,6 +224,50 @@ def test_prompt_budget_truncates_support_code_but_preserves_root_and_source():
     assert "Code truncated: yes" in built.source_catalog["S1"]
     assert "S" * 3000 not in built.source_catalog["S1"]
     assert analyzer.last_prompt_budget_diagnostics
+
+
+def test_prompt_budget_applies_equal_support_code_caps():
+    supports = [
+        SupportingFunctionContext(
+            name=f"support_{index}",
+            address=f"{index + 2000}",
+            parent_address="1000",
+            selected_address=f"{index + 2000}",
+            decompiled_code=code * 3000,
+            decompilation_succeeded=True,
+        )
+        for index, code in enumerate(("A", "B"), 1)
+    ]
+    context = FunctionContext(
+        name="FUN_root",
+        address="1000",
+        decompiled_code="ROOT_IMPLEMENTATION",
+        supporting_functions=supports,
+    )
+    empty_context = replace(
+        context,
+        supporting_functions=[
+            replace(support, decompiled_code="") for support in supports
+        ],
+    )
+    minimum_prompt_length = len(PromptBuilder().build_prompt_with_sources(
+        empty_context
+    ).prompt)
+    analyzer = _analyzer_for_context(
+        context, max_prompt_chars=minimum_prompt_length + 500
+    )
+
+    built = analyzer._build_bounded_prompt(context)
+
+    support_code = [
+        source.split("Decompiler output:\n", 1)[1]
+        for source_id, source in sorted(built.source_catalog.items())
+        if source_id in {"S1", "S2"}
+    ]
+    assert len(support_code) == 2
+    assert len(support_code[0]) == len(support_code[1])
+    assert 0 < len(support_code[0]) < 3000
+    assert "ROOT_IMPLEMENTATION" in built.source_catalog["R0"]
 
 
 def test_prompt_budget_rejects_context_when_protected_root_cannot_fit():

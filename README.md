@@ -46,6 +46,10 @@ On Linux, activate with `source .venv/bin/activate` and set
 To install the Python test dependency as well, use
 `python -m pip install -e ".[test]"` instead of `python -m pip install -e .`.
 Run the Python tests from the repository root with `python -m pytest`.
+The optional local Ollama smoke test is skipped by default; run it with
+`$env:GHIDRA_AI_RUN_OLLAMA_SMOKE = '1'; python -m pytest tests/integration`
+in PowerShell, or `GHIDRA_AI_RUN_OLLAMA_SMOKE=1 python -m pytest tests/integration`
+on Linux.
 
 Build the Java extension using a JDK supported by Ghidra:
 

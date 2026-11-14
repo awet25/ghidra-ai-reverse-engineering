@@ -33,6 +33,8 @@ class AIService:
                             json=payload,timeout=self.timeout)
         response.raise_for_status()
         data=response.json()
+        if not isinstance(data, dict) or not isinstance(data.get("response"), str):
+            raise ValueError("Ollama response must contain a string 'response' field.")
         self.last_diagnostics={"num_ctx": self.num_ctx, "num_predict": self.num_predict,
                                "prompt_chars": len(prompt)}
         for key in ("prompt_eval_count", "eval_count", "total_duration"):

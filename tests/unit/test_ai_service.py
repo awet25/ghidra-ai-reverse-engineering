@@ -81,6 +81,20 @@ def test_analyze_propagates_http_errors(monkeypatch):
         service.analyze("prompt")
 
 
+@pytest.mark.parametrize(
+    "data",
+    [{}, {"response": None}, {"response": 1}, []],
+)
+def test_analyze_rejects_missing_or_invalid_response_field(monkeypatch, data):
+    monkeypatch.setattr(
+        "ghidra_ai.ai_service.requests.post",
+        lambda *args, **kwargs: FakeResponse(data),
+    )
+
+    with pytest.raises(ValueError, match="string 'response' field"):
+        AIService().analyze("prompt")
+
+
 def test_diagnostic_callback_failure_does_not_fail_successful_request(monkeypatch):
     monkeypatch.setattr(
         "ghidra_ai.ai_service.requests.post",
