@@ -43,6 +43,10 @@ $env:GHIDRA_INSTALL_DIR = 'C:\path\to\ghidra_12.1.3_PUBLIC'
 On Linux, activate with `source .venv/bin/activate` and set
 `GHIDRA_INSTALL_DIR` to the installation directory using `export`.
 
+To install the Python test dependency as well, use
+`python -m pip install -e ".[test]"` instead of `python -m pip install -e .`.
+Run the Python tests from the repository root with `python -m pytest`.
+
 Build the Java extension using a JDK supported by Ghidra:
 
 ```powershell
