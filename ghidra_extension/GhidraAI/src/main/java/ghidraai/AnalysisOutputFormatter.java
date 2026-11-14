@@ -5,15 +5,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 
 /** Only the script's known result sections belong in the analyst's result view. */
 final class AnalysisOutputFormatter {
     private static final List<String> HEADINGS = List.of(
-        "Function", "Address", "Summary", "Suggested Name", "Suspicious Behaviors",
-        "Evidence", "Confidence", "Limitations");
-    private static final Set<String> LIST_HEADINGS = Set.of(
-        "Suspicious Behaviors", "Evidence", "Limitations");
+        "Function", "Address", "Vulnerability Classification", "Vulnerable Code Isolation",
+        "Root Cause & Impact Analysis", "Remediation & Patch Verification");
     private static final String FAILURE =
         "Analysis could not be completed. See the Ghidra console for details.";
 
@@ -94,8 +91,9 @@ final class AnalysisOutputFormatter {
         for (String heading : HEADINGS) {
             body.append("<h3>").append(heading).append("</h3>");
             String value = String.join("\n", sections.get(heading)).strip();
-            if (LIST_HEADINGS.contains(heading)) {
-                appendList(body, value);
+            if (heading.equals("Vulnerable Code Isolation")) {
+                body.append("<pre>").append(escapedText(value.isEmpty() ? "Not provided." : value))
+                    .append("</pre>");
             }
             else {
                 body.append("<p>").append(text(value.isEmpty() ? "Not provided." : value)).append("</p>");
@@ -107,6 +105,7 @@ final class AnalysisOutputFormatter {
     private static boolean isDebugLine(String line) {
         return line.matches("=+") || line.equals("AI FUNCTION ANALYSIS") ||
             line.equals("Sending function to Qwen...") ||
+            line.equals("Sending function to the local model...") ||
             line.matches("(?:DEBUG|INFO|WARNING|ERROR)(?::.*| \\[[^]]+\\].*)") ||
             line.matches("File \".*\", line [0-9]+.*");
     }
@@ -126,8 +125,15 @@ final class AnalysisOutputFormatter {
         if (lower.contains("pyghidra")) {
             return "Start Ghidra with PyGhidra to run the analysis script.";
         }
-        if (lower.contains("invalid json") || lower.contains("ai response field")) {
-            return "The model returned an unreadable response. Try again.";
+        if (lower.contains("four-section markdown report") ||
+                lower.contains("required report heading") ||
+                lower.contains("duplicate report heading") ||
+                lower.contains("report headings are out of order") ||
+                lower.contains("ai response section")) {
+            return "The model response was incomplete or did not match the four-section report. Try again.";
+        }
+        if (lower.contains("output limit") || lower.contains("output-token limit")) {
+            return "The model response reached its output limit. Reduce the report or increase num_predict.";
         }
         return FAILURE;
     }
@@ -138,55 +144,19 @@ final class AnalysisOutputFormatter {
 
     static String message(String message) { return page("<p>" + text(message) + "</p>"); }
 
-    private static void appendList(StringBuilder body, String value) {
-        if (value.isEmpty() || value.equalsIgnoreCase("None") || value.equals("[]")) {
-            body.append("<p>None</p>");
-            return;
-        }
-        List<String> items = new ArrayList<>();
-        StringBuilder item = new StringBuilder();
-        for (String line : value.lines().toList()) {
-            if (line.isBlank() || line.equals("-") || line.equals("\u2022")) {
-                continue;
-            }
-            if (line.startsWith("- ") || line.startsWith("\u2022 ")) {
-                if (!item.isEmpty()) {
-                    items.add(item.toString().strip());
-                    item.setLength(0);
-                }
-                item.append(line.substring(2));
-            }
-            else {
-                if (!item.isEmpty()) {
-                    item.append('\n');
-                }
-                item.append(line);
-            }
-        }
-        if (!item.isEmpty()) {
-            items.add(item.toString().strip());
-        }
-        if (items.isEmpty()) {
-            body.append("<p>None</p>");
-        }
-        else {
-            body.append("<ul>");
-            for (String entry : items) {
-                body.append("<li>").append(text(entry)).append("</li>");
-            }
-            body.append("</ul>");
-        }
+    private static String text(String value) {
+        return escapedText(value).replace("\r\n", "\n").replace("\n", "<br>");
     }
 
-    private static String text(String value) {
-        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            .replace("\r\n", "\n").replace("\n", "<br>");
+    private static String escapedText(String value) {
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private static String page(String body) {
         return "<html><head><style>body { margin: 12px; } " +
             "h3 { margin-top: 14px; margin-bottom: 5px; } " +
-            "p { margin-top: 0; margin-bottom: 10px; } ul { margin-top: 0; }" +
+            "p { margin-top: 0; margin-bottom: 10px; } " +
+            "pre { white-space: pre-wrap; overflow-wrap: anywhere; }" +
             "</style></head><body>" + body + "</body></html>";
     }
 }

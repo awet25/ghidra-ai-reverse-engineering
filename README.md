@@ -86,7 +86,8 @@ start Ollama before analyzing. The service uses:
 | --- | --- |
 | Endpoint | `http://localhost:11434/api/generate` |
 | Model | `ghidra-re` |
-| Response | Non-streaming JSON |
+| Model output | Four-section Markdown report |
+| Transport | Non-streaming |
 | Context window (`num_ctx`) | 16,384 tokens |
 | Maximum output (`num_predict`) | 1,024 tokens |
 | HTTP timeout | 480 seconds |
@@ -116,8 +117,9 @@ token counting; adjust it together with the context/output settings.
 3. Optionally check up to five entries in **Supporting Functions**. Nothing is
    preselected; changing the root or program clears previous choices.
 4. Click **Analyze Function**. The button is disabled while analysis runs.
-5. Review Function, Address, Summary, Suggested Name, Suspicious Behaviors,
-   Evidence, Confidence and Limitations. No renames or program edits are applied.
+5. Review Vulnerability Classification, Vulnerable Code Isolation, Root Cause &
+   Impact Analysis, and Remediation & Patch Verification. No code or program
+   edits are applied.
 
 Java passes checked entries as `support=<entry-address>` script arguments. Python
 validates exact entries against the root's resolved direct internal callees.
@@ -141,7 +143,7 @@ shallow provenance and conservative return-use observations. Unresolved CALLIND
 sites are recorded without invented targets. Direct internal callee previews use
 Listing, raw instruction P-code and optional block/signature metadata; they do not
 decompile descendants. Detailed previews and High P-code metadata are not sent to
-Qwen. Only the root and explicitly accepted supporting implementations enter the
+the model. Only the root and explicitly accepted supporting implementations enter the
 prompt.
 
 Source IDs are local to each prompt:
@@ -154,23 +156,25 @@ Source IDs are local to each prompt:
 | `Sn` | Selected supporting implementations and completeness metadata |
 | `Sn-STRn` | Supporting strings |
 
-Evidence must cite supplied IDs. Provenance validation checks citation syntax and
-catalog membership; it does **not** prove the cited source establishes the claim.
-The six-field AnalysisResult is preserved. Citation/confidence diagnostics appear
-under Limitations with an explicit syntax-only label.
+The source catalog is retained for evaluation and traceability. The report parser
+checks for the four required headings and non-empty section content; it does not
+validate citations or establish that a reported claim is true. If an initial
+response has valid, non-empty sections but omits only trailing sections, the
+analyzer makes one continuation request and validates the combined report. Other
+malformed responses are rejected.
 
 ## Limitations and research mode
 
 Decompiler output and recovered signatures can be incomplete. Indirect targets,
 conditional execution, runtime effects and unavailable implementations may remain
-unknown. Function/API names and strings alone do not establish intent. Qwen can
-still hallucinate or report excessive confidence despite complete context and
-valid citations. Large prompts can be slow, and output limits can produce an
-incomplete JSON response. Human review remains necessary.
+unknown. Function/API names and strings alone do not establish intent. The model can
+still hallucinate. Large prompts can be slow, and output limits can produce an
+incomplete Markdown report. Human review remains necessary.
 
 Normal `analyze(function, monitor, supporting_functions=None, verify=False)` makes
-**one** model request. An experimental second-pass verifier is retained for
-capstone evaluation and is not exposed in the Java UI:
+one model request, with at most one continuation request for an incomplete report.
+An experimental second-pass verifier is retained for capstone evaluation and is
+not exposed in the Java UI:
 
 ```python
 result = analyzer.analyze(function, monitor,
@@ -181,11 +185,12 @@ Research mode makes two requests against the same supplied sources, without extr
 extraction. It is disabled by default because evaluation did not improve semantic
 correctness and significantly increased latency. Failures return the original
 unverified draft with separate verification diagnostics. The experimental verifier
-remains available for explicit research use.
+uses the same four-section Markdown response format and remains available for
+explicit research use.
 
 For explicit evaluation, inspect `analyzer.last_source_catalog`,
-`last_evidence_validation`, `last_verification`, `last_prompt_budget_diagnostics`,
-and `analyzer.ai_service.last_diagnostics`. The latter captures optional Ollama
+`last_verification`, `last_prompt_budget_diagnostics`, and
+`analyzer.ai_service.last_diagnostics`. The latter captures optional Ollama
 `prompt_eval_count`, `eval_count`, and `total_duration` (nanoseconds).
 An explicit `AIService(diagnostic_output=...)` callback can log token counts.
 Evaluation diagnostics are quiet in normal plugin output; Python evaluation

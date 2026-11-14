@@ -46,6 +46,7 @@ public final class FunctionListRefreshRegression {
     }
 
     private static void runChecks() throws Exception {
+        checkReportFormatter();
         ProgramFixture first = new ProgramFixture();
         ProgramFixture alreadyOpen = new ProgramFixture();
         FunctionFixture existing = new FunctionFixture("existing_function");
@@ -148,6 +149,32 @@ public final class FunctionListRefreshRegression {
             panel.dispose();
         });
         require(second.listeners.isEmpty(), "Disposing the panel must detach the listener");
+    }
+
+    private static void checkReportFormatter() {
+        String output = String.join("\n",
+            "Program: sample.bin",
+            "Function:",
+            "root_function",
+            "Address:",
+            "1000",
+            "===== ANALYSIS RESULT =====",
+            "Vulnerability Classification:",
+            "Potential out-of-bounds write.",
+            "Vulnerable Code Isolation:",
+            "buffer[index] = value;",
+            "Root Cause & Impact Analysis:",
+            "The index is not checked against the buffer length.",
+            "Remediation & Patch Verification:",
+            "Check bounds and test boundary cases.");
+
+        AnalysisOutputFormatter.FormattedResult result = AnalysisOutputFormatter.present(output);
+        require(result.status().equals("Analysis complete."),
+            "A complete four-section Markdown report must be accepted");
+        require(result.html().contains("<h3>Vulnerability Classification</h3>"),
+            "The new report headings must be displayed");
+        require(result.html().contains("<pre>buffer[index] = value;</pre>"),
+            "Vulnerable code must retain its formatting");
     }
 
     private static void awaitUi(BooleanSupplier condition) throws Exception {

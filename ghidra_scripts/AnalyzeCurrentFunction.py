@@ -68,7 +68,7 @@ def main():
 
     try:
 
-        print("\nSending function to Qwen...")
+        print("\nSending function to the local model...")
 
         if supporting_functions:
             analysis = analyzer.analyze(
@@ -78,45 +78,14 @@ def main():
             analysis = analyzer.analyze(function, monitor)
 
         print("\n===== ANALYSIS RESULT =====\n")
-
-        print("Summary:")
-        print(analysis.summary)
-
-        print("\nSuggested Name:")
-        print(analysis.suggested_name)
-
-        print("\nSuspicious Behaviors:")
-        if analysis.suspicious_behaviors:
-            for behavior in analysis.suspicious_behaviors:
-                print("-", behavior)
-        else:
-            print("None")
-
-        print("\nEvidence:")
-        if analysis.evidence:
-            for evidence in analysis.evidence:
-                print("-", evidence)
-        else:
-            print("None")
-
-        print("\nConfidence:")
-        print(analysis.confidence)
-
-        print("\nLimitations:")
-        validation = analyzer.last_evidence_validation
-        diagnostics = [] if validation is None else validation.errors + validation.confidence_diagnostics
-        verification = analyzer.last_verification
-        verification_unavailable = verification is not None and verification.status != "completed"
-        if analysis.limitations or diagnostics or verification_unavailable:
-            for limitation in analysis.limitations:
-                print("-", limitation)
-            # Display system diagnostics separately; never rewrite the model's AnalysisResult.
-            for diagnostic in diagnostics:
-                print("- Provenance validation (syntax only):", diagnostic)
-            if verification_unavailable:
-                print("- Semantic verification unavailable; showing unverified draft:", verification.failure)
-        else:
-            print("None")
+        for heading, content in (
+            ("Vulnerability Classification", analysis.vulnerability_classification),
+            ("Vulnerable Code Isolation", analysis.vulnerable_code_isolation),
+            ("Root Cause & Impact Analysis", analysis.root_cause_impact_analysis),
+            ("Remediation & Patch Verification", analysis.remediation_patch_verification),
+        ):
+            print(f"{heading}:")
+            print(content)
 
     except Exception as error:
 

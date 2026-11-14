@@ -1,7 +1,7 @@
 import pytest
 import requests
 
-from ghidra_ai.ai_service import AIService
+from ghidra_ai.ai_service import AIService, REPORT_SYSTEM_PROMPT
 
 
 class FakeResponse:
@@ -17,12 +17,13 @@ class FakeResponse:
 
 def test_analyze_sends_ollama_payload_and_records_diagnostics(monkeypatch):
     calls = []
+    model_response = "### 1. Vulnerability Classification\nNo vulnerability identified."
     monkeypatch.setattr(
         "ghidra_ai.ai_service.requests.post",
         lambda url, *, json, timeout: (
             calls.append((url, json, timeout))
             or FakeResponse({
-                "response": '{"summary":"observed"}',
+                "response": model_response,
                 "prompt_eval_count": 12,
                 "eval_count": 5,
                 "total_duration": 99,
@@ -39,13 +40,13 @@ def test_analyze_sends_ollama_payload_and_records_diagnostics(monkeypatch):
 
     result = service.analyze("analyze this function")
 
-    assert result == '{"summary":"observed"}'
+    assert result == model_response
     assert calls == [(
         "http://ollama.local/api/generate",
         {
             "model": "local-model",
+            "system": REPORT_SYSTEM_PROMPT,
             "prompt": "analyze this function",
-            "format": "json",
             "stream": False,
             "options": {"num_ctx": 2048, "num_predict": 256},
         },
@@ -107,3 +108,20 @@ def test_diagnostic_callback_failure_does_not_fail_successful_request(monkeypatc
     service = AIService(diagnostic_output=fail)
 
     assert service.analyze("prompt") == "ok"
+
+
+def test_analyze_surfaces_ollama_output_limit(monkeypatch):
+    monkeypatch.setattr(
+        "ghidra_ai.ai_service.requests.post",
+        lambda *args, **kwargs: FakeResponse({
+            "response": "partial report",
+            "done_reason": "length",
+            "eval_count": 1024,
+        }),
+    )
+    service = AIService()
+
+    with pytest.raises(ValueError, match="reached the 1024-token output limit"):
+        service.analyze("prompt")
+
+    assert service.last_diagnostics["done_reason"] == "length"

@@ -1,5 +1,4 @@
 import importlib
-import json
 import sys
 import types
 from dataclasses import replace
@@ -8,6 +7,7 @@ import pytest
 
 from ghidra_ai.models import FunctionContext, SupportingFunctionContext
 from ghidra_ai.prompt_builder import PromptBuilder
+from ghidra_ai.ai_service import CONTINUATION_SYSTEM_PROMPT
 from ghidra_ai.response_parser import ResponseParser
 
 
@@ -65,13 +65,35 @@ class FakeExtractor:
 class FakeAIService:
     def __init__(self, responses=None):
         self.prompts = []
+<<<<<<< HEAD
         self.responses = list(responses if responses is not None else [_analysis_response()])
+=======
+        self.system_prompts = []
+        self.responses = list(responses or [])
+>>>>>>> new-prompt-test
 
-    def analyze(self, prompt):
+    def analyze(self, prompt, *, system_prompt=None):
         self.prompts.append(prompt)
+<<<<<<< HEAD
         if not self.responses:
             raise AssertionError("Unexpected additional model request.")
         return self.responses.pop(0)
+=======
+        self.system_prompts.append(system_prompt)
+        if self.responses:
+            return self.responses.pop(0)
+        return """### 1. Vulnerability Classification
+No vulnerability identified.
+
+### 2. Vulnerable Code Isolation
+No vulnerable code identified.
+
+### 3. Root Cause & Impact Analysis
+The available root implementation does not show a vulnerability.
+
+### 4. Remediation & Patch Verification
+No patch is indicated by the available context."""
+>>>>>>> new-prompt-test
 
 
 def test_analyze_makes_one_model_request_and_returns_parsed_result():
@@ -84,10 +106,58 @@ def test_analyze_makes_one_model_request_and_returns_parsed_result():
 
     result = analyzer.analyze(function=object(), monitor=None)
 
-    assert result.summary == "Processes the root input."
+    assert result.vulnerability_classification == "No vulnerability identified."
     assert len(analyzer.ai_service.prompts) == 1
     assert analyzer.last_source_catalog["R0"]
-    assert analyzer.last_evidence_validation.valid
+    assert analyzer.last_evidence_validation is None
+
+
+def test_analyze_continues_once_when_only_trailing_sections_are_missing():
+    context = FunctionContext(
+        name="FUN_root",
+        address="1000",
+        decompiled_code="root implementation",
+    )
+    analyzer = _analyzer_for_context(context)
+    partial = """### 1. Vulnerability Classification
+No vulnerability identified.
+
+### 2. Vulnerable Code Isolation
+No vulnerable code identified.
+
+### 3. Root Cause & Impact Analysis
+The available root implementation does not show a vulnerability."""
+    analyzer.ai_service = FakeAIService([
+        partial,
+        """### 4. Remediation & Patch Verification
+No patch is indicated by the available context.""",
+    ])
+
+    result = analyzer.analyze(function=object(), monitor=None)
+
+    assert result.remediation_patch_verification == (
+        "No patch is indicated by the available context."
+    )
+    assert len(analyzer.ai_service.prompts) == 2
+    assert "PARTIAL REPORT (already generated; do not repeat)" in (
+        analyzer.ai_service.prompts[1]
+    )
+    assert analyzer.ai_service.system_prompts == [None, CONTINUATION_SYSTEM_PROMPT]
+
+
+def test_analyze_does_not_continue_non_partial_malformed_responses():
+    context = FunctionContext(
+        name="FUN_root",
+        address="1000",
+        decompiled_code="root implementation",
+    )
+    analyzer = _analyzer_for_context(context)
+    analyzer.ai_service = FakeAIService(["not a report"])
+
+    with pytest.raises(ValueError, match="four-section Markdown report"):
+        analyzer.analyze(function=object(), monitor=None)
+
+    assert len(analyzer.ai_service.prompts) == 1
 
 
 def test_analyze_verifies_the_draft_when_requested():

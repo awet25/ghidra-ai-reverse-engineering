@@ -4,9 +4,9 @@ from dataclasses import replace
 from .context_extractor import ContextExtractor
 from .prompt_builder import PromptBuilder
 from .ai_service import AIService
-from .response_parser import ResponseParser
-from .evidence_provenance import EvidenceProvenanceValidator
+from .response_parser import IncompleteReportError, ResponseParser
 from .analysis_verifier import AnalysisVerifier
+from .ai_service import CONTINUATION_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -60,25 +60,26 @@ class FunctionAnalyzer:
         built=self._build_bounded_prompt(context)
         self.last_source_catalog=built.source_catalog
         response=self.ai_service.analyze(built.prompt)
-        analysis=self.response_parser.parse(response)
-        draft_provenance=EvidenceProvenanceValidator().validate(
-            analysis,built.source_catalog
-        )
-        self.last_evidence_validation=draft_provenance
-        for diagnostic in draft_provenance.errors + draft_provenance.confidence_diagnostics:
-            logger.warning("draft evidence provenance (syntax only): %s",diagnostic)
+        try:
+            analysis=self.response_parser.parse(response)
+        except IncompleteReportError as error:
+            continuation_prompt = (
+                f"{built.prompt}\n\n"
+                "PARTIAL REPORT (already generated; do not repeat):\n"
+                f"{response}\n\n"
+                "Continue with only these missing trailing sections, in order:\n"
+                + "\n".join(f"### {heading}" for heading in error.missing_headings)
+            )
+            continuation = self.ai_service.analyze(
+                continuation_prompt, system_prompt=CONTINUATION_SYSTEM_PROMPT
+            )
+            analysis=self.response_parser.parse(f"{response.rstrip()}\n\n{continuation}")
         if not verify:
             return analysis
 
         self.last_verification=AnalysisVerifier(self.ai_service,self.response_parser).verify(
-            built,analysis,draft_provenance,monitor
+            built,analysis,monitor
         )
-        self.last_evidence_validation=(self.last_verification.verified_provenance
-            if self.last_verification.status == "completed" else draft_provenance)
-        validation=self.last_verification.verified_provenance
-        if validation is not None:
-            for diagnostic in validation.errors + validation.confidence_diagnostics:
-                logger.warning("verification evidence provenance (syntax only): %s",diagnostic)
         if self.last_verification.failure:
             logger.warning("Semantic verification unavailable; showing unverified draft: %s",
                            self.last_verification.failure)
